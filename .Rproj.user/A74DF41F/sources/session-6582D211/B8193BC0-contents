@@ -1,0 +1,156 @@
+#Clearing environment
+rm(list=ls())
+#installing packages
+library('ggplot2')
+#install.packages("ggthemes")
+library('ggthemes') 
+library('scales')
+library('dplyr') 
+#install.packages("mice")
+library('mice')
+#install.packages("randomForest")
+library('randomForest') 
+library('data.table')
+#install.packages("gridExtra")
+library('gridExtra')
+#install.packages("corrplot")
+library('corrplot') 
+library('GGally')
+library('e1071')
+
+#reading the data
+train <-read.csv('houseprices_train.csv', stringsAsFactors = F)
+test  <-read.csv('houseprices_test.csv', stringsAsFactors = F)
+
+#Structure of the data
+dim(train)
+str(train)
+dim(test)
+str(test)
+
+#Count the number of columns that consists of text data
+
+sum(sapply(train[,1:81], typeof) == "character")
+
+#Count the number of columns that consists of numerical data
+
+sum(sapply(train[,1:81], typeof) == "integer")
+
+# Obtain summary statistics
+
+summary(train[,sapply(train[,1:81], typeof) == "integer"])
+
+
+cat('Train has', dim(train)[1], 'rows and', dim(train)[2], 'columns.')
+cat('Test has', dim(test)[1], 'rows and', dim(test)[2], ' columns.')
+
+# The percentage of data missing in train
+
+sum(is.na(train)) / (nrow(train) *ncol(train))
+
+# The percentage of data missing in test
+
+sum(is.na(test)) / (nrow(test) * ncol(test))
+
+# Check for duplicated rows
+
+cat("The number of duplicated rows are", nrow(train) - nrow(unique(train)))
+
+#Combine data. Since test dataset has no "Saleprice" variable. We will create it and then combine.
+test$SalePrice<-rep(NA,1459)
+house<-bind_rows(train,test)
+
+# Data Exploration
+
+str(house)
+summary(house)
+head(house)
+
+#Data Visualization
+cat_var <- names(train)[which(sapply(train, is.character))]
+cat_car <- c(cat_var, 'BedroomAbvGr', 'HalfBath', ' KitchenAbvGr','BsmtFullBath', 'BsmtHalfBath', 'MSSubClass')
+numeric_var <- names(train)[which(sapply(train, is.numeric))]
+
+
+## Creating one training dataset with categorical variable and one with numeric variable. We will use this for data visualization.
+
+train1_cat<-train[cat_var]
+train1_num<-train[numeric_var]
+
+## Bar plot/Density plot function
+
+## Bar plot function
+
+plotHist <- function(data_in, i) 
+{
+  data <- data.frame(x=data_in[[i]])
+  p <- ggplot(data=data, aes(x=factor(x))) + stat_count() + xlab(colnames(data_in)[i]) + theme_light() + 
+    theme(axis.text.x = element_text(angle = 90, hjust =1))
+  return (p)
+}
+# Density plot function
+
+plotDen <- function(data_in, i){
+  data <- data.frame(x=data_in[[i]], SalePrice = data_in$SalePrice)
+  p <- ggplot(data= data) + geom_line(aes(x = x), stat = 'density', size = 1,alpha = 1.0) +
+    xlab(paste0((colnames(data_in)[i]), '\n', 'Skewness: ',round(skewness(data_in[[i]], na.rm = TRUE), 2))) + theme_light() 
+  return(p)
+  
+}
+# Function to call both Bar plot and Density plot function
+
+doPlots <- function(data_in, fun, ii, ncol=3) 
+{
+  pp <- list()
+  for (i in ii) {
+    p <- fun(data_in=data_in, i=i)
+    pp <- c(pp, list(p))
+  }
+  do.call("grid.arrange", c(pp, ncol=ncol))
+}
+
+# Barplots for the categorical features
+
+doPlots(train1_cat, fun = plotHist, ii = 1:4, ncol = 2)
+
+doPlots(train1_cat, fun = plotHist, ii  = 5:8, ncol = 2)
+
+doPlots(train1_cat, fun = plotHist, ii = 9:12, ncol = 2)
+
+doPlots(train1_cat, fun = plotHist, ii = 13:18, ncol = 2)
+
+doPlots(train1_cat, fun = plotHist, ii = 19:22, ncol = 2)
+
+#Boxplot
+
+ggplot(train, aes(x = Neighborhood, y = SalePrice)) +
+  geom_boxplot() +
+  geom_hline(aes(yintercept=80), 
+             colour='red', linetype='dashed', lwd=2) +
+  scale_y_continuous(labels=dollar_format()) +
+  theme_few()
+#Density plots for numeric variables
+
+doPlots(train1_num, fun = plotDen, ii = 2:6, ncol = 2)
+
+doPlots(train1_num, fun = plotDen, ii = 7:12, ncol = 2)
+
+doPlots(train1_num, fun = plotDen, ii = 13:17, ncol = 2)
+
+#Histogram for numeric variable
+
+doPlots(train1_num, fun = plotHist, ii = 18:23, ncol = 2)
+
+#Exploring the correlation
+
+correlations <- cor(na.omit(train1_num[,-1]))
+#correlations
+
+row_indic <- apply(correlations, 1, function(x) sum(x > 0.3 | x < -0.3) > 1)
+correlations<- correlations[row_indic ,row_indic ]
+corrplot(correlations, method="square")
+
+#Building the model
+library(randomForest)
+house_model <- randomForest(SalePrice~.,
+                            data = train)
